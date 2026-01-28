@@ -2,14 +2,7 @@
 <div class="header">
     <div class="main-header">
         <!-- Header Left - Logo -->
-        <div class="header-left">
-            <a href="{{ route('dashboard') }}" class="logo">
-                <img src="{{ asset('assets/images/logo/logo.png') }}" alt="Logo" style="height: 20px;">
-            </a>
-            <a href="{{ route('dashboard') }}" class="dark-logo">
-                <img src="{{ asset('assets/images/logo/logo.png') }}" alt="Logo" style="height: 40px;">
-            </a>
-        </div>
+       
 
         <!-- Mobile Menu Button -->
         <a id="mobile_btn" class="mobile_btn" href="#sidebar">
