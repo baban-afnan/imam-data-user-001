@@ -27,7 +27,7 @@ class PaymentWebhookController extends Controller
         Log::info('Palmpay webhook hit:', ['payload' => $payload]);
 
         // Verify the signature
-        if (! $this->verifySignature($payload)) {
+        if (!$this->verifySignature($payload)) {
             Log::warning('Invalid webhook signature received', ['payload' => $payload]);
             return response()->json(['error' => 'Invalid signature'], 401);
         }
@@ -46,48 +46,48 @@ class PaymentWebhookController extends Controller
 
     private function verifySignature($data)
     {
-
-        $sign = $data['sign'];
-
-        $verifyResults = signatureHelper::verify_callback_signature($data, $sign, config('keys.public'));
-
-        if ($verifyResults != true) {
+        if (!isset($data['sign'])) {
             return false;
         }
 
-        return true;
+        $sign = $data['sign'];
+        $publicKey = config('keys.public');
+
+        if (!$publicKey) {
+            Log::error('PalmPay public key not configured in config/keys.php');
+            return false;
+        }
+
+        return signatureHelper::verify_callback_signature($data, $sign, $publicKey);
     }
 
-
-    
     private function processReservedAccountTransaction($payload)
     {
-        if (isset($payload['orderId']) && ($payload['transType'] ?? null) == 41) {
-            Log::info('[PAYOUT]:', ['payload' => $payload]);
-            // $this->handlePayout($payload);
+        // transType 41 is Payout (Disbursement), others are Payin (Collections)
+        if (($payload['transType'] ?? null) == 41) {
+            Log::info('[PAYOUT Webhook]:', ['payload' => $payload]);
+            $this->handlePayout($payload);
         } else {
-            Log::info('[PAYIN]:', ['payload' => $payload]);
+            Log::info('[PAYIN Webhook]:', ['payload' => $payload]);
 
             $virtualAccountNo = $payload['virtualAccountNo'] ?? null;
-            $orderNo          = $payload['orderNo'] ?? null;
+            $orderNo          = $payload['merchantOrderNo'] ?? $payload['orderNo'] ?? null;
             $amountPaid       = isset($payload['orderAmount']) ? $payload['orderAmount'] / 100 : 0;
             $payerBankName    = $payload['payerBankName'] ?? '';
             $payerAccountName = $payload['payerAccountName'] ?? '';
             $service_description = 'Your wallet has been credited with ₦' . number_format($amountPaid, 2);
-            $orderStatus      = $payload['orderStatus'] ?? 0;
+            $orderStatus      = $payload['orderStatus'] ?? null;
 
-            if (! $virtualAccountNo || ! $orderNo) {
+            if (!$virtualAccountNo || !$orderNo) {
                 Log::warning('Webhook missing accountNo or orderNo', ['payload' => $payload]);
                 return;
             }
 
-            $response = VirtualAccount::select('user_id')
-                ->where('accountNo', $virtualAccountNo)
-                ->first();
+            $virtualAccount = VirtualAccount::where('accountNo', $virtualAccountNo)->first();
 
-            if ($response) {
+            if ($virtualAccount) {
                 $this->createTransactionForReservedAccount(
-                    $response->user_id,
+                    $virtualAccount->user_id,
                     $orderNo,
                     $amountPaid,
                     $payerBankName,
@@ -102,9 +102,58 @@ class PaymentWebhookController extends Controller
         }
     }
 
+    private function handlePayout($payload)
+    {
+        $orderNo = $payload['merchantOrderNo'] ?? $payload['orderNo'] ?? null;
+        $status = $payload['orderStatus'] ?? null; // usually 1 for success
+
+        if (!$orderNo) return;
+
+        $transaction = Transaction::where('transaction_ref', $orderNo)->first();
+        if ($transaction) {
+            $newStatus = ($status == 1) ? 'completed' : (($status == 2) ? 'failed' : 'pending');
+            $transaction->update([
+                'status' => $newStatus,
+                'metadata' => array_merge($transaction->metadata ?? [], ['webhook_update' => $payload])
+            ]);
+            Log::info("Payout transaction {$orderNo} updated to {$newStatus}");
+        }
+    }
+
+    private function createTransactionForReservedAccount($userId, $orderNo, $amountPaid, $payerBankName, $payerAccountName, $service_description, $orderStatus, $payload)
+    {
+        $transaction = Transaction::where('transaction_ref', $orderNo)->first();
+
+        if ($transaction) {
+            $this->updateTransaction($orderNo, $amountPaid, $payerBankName, $payerAccountName, $service_description, $orderStatus, $userId, $payload);
+        } else {
+            // Only credit wallet if status is successful ( PalmsPay usually 1 for success)
+            if ($orderStatus == 1 || $orderStatus === null) {
+                $this->insertTransaction($userId, $orderNo, $amountPaid, $payerAccountName, $payerBankName, $service_description, $payload);
+                $this->updateWalletBalance($userId, $amountPaid);
+
+                // Check for 10,000 threshold logic
+                if ($amountPaid >= 10000) {
+                    $chargeAmount = 50;
+                    $chargeDesc = 'transaction lavy charge';
+                    $chargeRef = 'CHG-' . strtoupper(Str::random(10));
+                    
+                    $this->debitWallet($userId, $chargeAmount, $chargeDesc, $chargeRef, $orderNo);
+
+                    // Schedule VAT Charge (15 Naira) after 1 minute
+                    ProcessVatCharge::dispatch($userId)->delay(now()->addMinute());
+                }
+
+                $this->sendNotificationAndEmail($userId, $amountPaid, $orderNo, $payerBankName, 'Topup');
+            } else {
+                Log::info("Transaction {$orderNo} skipped due to status: {$orderStatus}");
+            }
+        }
+    }
+
     private function updateTransaction($orderNo, $amountPaid, $payerBankName, $payerAccountName, $service_description, $orderStatus, $userId, $payload)
     {
-        $status = $orderStatus == 1 ? 'completed' : 'pending';
+        $status = ($orderStatus == 1) ? 'completed' : 'pending';
 
         $user = User::find($userId);
         $performedBy = $user ? $user->first_name . ' ' . $user->last_name : 'System';
@@ -132,78 +181,49 @@ class PaymentWebhookController extends Controller
             'user_id'        => $userId,
             'payer_name'     => $payerAccountName,
             'transaction_ref'=> $orderNo,
-            'type'           => 'credit', // Lowercase as per migration enum
+            'type'           => 'credit',
             'description'    => $service_description,
             'amount'         => $amountPaid,
             'status'         => 'completed',
             'performed_by'   => $performedBy,
             'metadata'       => $payload,
-            'created_at'     => Carbon::now(),
-            'updated_at'     => Carbon::now(),
         ]);
 
         Log::info('New transaction inserted for '.$orderNo);
-    }
-
-    private function createTransactionForReservedAccount($userId, $orderNo, $amountPaid, $payerBankName, $payerAccountName, $service_description, $orderStatus, $payload)
-    {
-        $transaction = Transaction::where('transaction_ref', $orderNo)->first();
-
-        if ($transaction) {
-            $this->updateTransaction($orderNo, $amountPaid, $payerBankName, $payerAccountName, $service_description, $orderStatus, $userId, $payload);
-        } else {
-            $this->insertTransaction($userId, $orderNo, $amountPaid, $payerAccountName, $payerBankName, $service_description, $payload);
-            $this->updateWalletBalance($userId, $amountPaid);
-
-            // Check for 10,000 threshold logic
-            if ($amountPaid >= 10000) {
-                // 1. Debit 50 Naira Charge
-                $chargeAmount = 50;
-                $chargeDesc = 'transaction lavy charge';
-                $chargeRef = 'CHG-' . strtoupper(Str::random(10));
-                
-                // Debit Wallet
-                $wallet = Wallet::where('user_id', $userId)->first();
-                if ($wallet) {
-                    $wallet->decrement('balance', $chargeAmount);
-                }
-                
-                // Create Debit Transaction
-                Transaction::create([
-                    'user_id' => $userId,
-                    'transaction_ref' => $chargeRef,
-                    'type' => 'debit',
-                    'amount' => $chargeAmount,
-                    'description' => $chargeDesc,
-                    'status' => 'completed',
-                    'performed_by' => 'System',
-                    'metadata' => ['related_transaction' => $orderNo, 'type' => 'levy_charge'],
-                ]);
-
-                // 2. Schedule VAT Charge (15 Naira) after 1 minute
-                ProcessVatCharge::dispatch($userId)->delay(now()->addMinute());
-            }
-
-            $this->sendNotificationAndEmail($userId, $amountPaid, $orderNo, $payerBankName, 'Topup');
-        }
     }
 
     private function updateWalletBalance($userId, $amountPaid)
     {
         $wallet = Wallet::where('user_id', $userId)->first();
         if ($wallet) {
-            // Removed bonus logic as requested
-            $wallet->update([
-                'balance' => $wallet->balance + $amountPaid,
-                'deposit'        => $wallet->deposit + $amountPaid,
-            ]);
-
+            $wallet->increment('balance', $amountPaid);
+            $wallet->increment('available_balance', $amountPaid);
+            
             Log::info('Wallet updated for user '.$userId.' with amount '.$amountPaid);
         } else {
             Log::warning('Wallet not found for user ID: '.$userId);
         }
     }
 
+    private function debitWallet($userId, $amount, $desc, $ref, $relatedRef)
+    {
+        $wallet = Wallet::where('user_id', $userId)->first();
+        if ($wallet) {
+            $wallet->decrement('balance', $amount);
+            $wallet->decrement('available_balance', $amount);
+
+            Transaction::create([
+                'user_id' => $userId,
+                'transaction_ref' => $ref,
+                'type' => 'debit',
+                'amount' => $amount,
+                'description' => $desc,
+                'status' => 'completed',
+                'performed_by' => 'System',
+                'metadata' => ['related_transaction' => $relatedRef, 'type' => 'levy_charge'],
+            ]);
+        }
+    }
 
     private function sendNotificationAndEmail($userId, $amountPaid, $orderNo, $bankName, $type)
     {
@@ -221,6 +241,8 @@ class PaymentWebhookController extends Controller
                 Log::info('Payment notification sent to '.$user->email.' for transaction '.$orderNo);
             } catch (TransportExceptionInterface $e) {
                 Log::error('Error sending email for transaction '.$orderNo.': '.$e->getMessage());
+            } catch (\Throwable $e) {
+                Log::error('General error sending email: '.$e->getMessage());
             }
         } else {
             Log::warning('No email found for user '.$userId.' while sending notification');
