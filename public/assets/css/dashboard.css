@@ -1,0 +1,65 @@
+/* Dashboard Notification Styles */
+.notification-container {
+    overflow: hidden;
+    width: 100%;
+}
+
+.scrolling-text-container {
+    width: 100%;
+    overflow: hidden;
+    white-space: nowrap;
+    position: relative;
+}
+
+.scrolling-text {
+    display: inline-block;
+    padding-left: 100%;
+    animation: scroll-left 15s linear infinite;
+}
+
+@keyframes scroll-left {
+    0% {
+        transform: translateX(0);
+    }
+    100% {
+        transform: translateX(-100%);
+    }
+}
+
+.scrolling-text-container:hover .scrolling-text {
+    animation-play-state: paused;
+}
+
+/* Service Card Styles */
+.service-card {
+    transition: 0.2s ease;
+    border-radius: 14px !important;
+}
+
+.service-card:hover {
+    transform: translateY(-3px);
+}
+
+/* Perfect grid spacing */
+.service-grid {
+    row-gap: 14px;
+}
+
+/* Mobile Responsive - Reduce service box size */
+@media (max-width: 576px) {
+    .service-card .card-body {
+        padding: 0.7rem !important;
+    }
+    
+    .service-card h6 {
+        font-size: 12px !important;
+    }
+    
+    .service-card .avatar {
+        padding: 0.4rem !important;
+    }
+    
+    .service-card i {
+        font-size: 14px !important;
+    }
+}
