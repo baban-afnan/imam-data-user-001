@@ -1,5 +1,5 @@
 <x-app-layout>
-    <title>Arewa Smart - {{ $title ?? 'CRM Request Form' }}</title>
+    <title>Imam Data Sub - {{ $title ?? 'CRM Request Form' }}</title>
     <div class="page-body">
         <div class="container-fluid">
             <div class="page-title mb-3">

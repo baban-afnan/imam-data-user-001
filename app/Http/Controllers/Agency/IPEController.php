@@ -15,36 +15,40 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
-class NinValidationController extends Controller
+class IpeController extends Controller
 {
     public function index(Request $request)
     {
-        $validationService = Service::where('name', 'Validation')->first();
-        $validationFields = $validationService ? $validationService->fields : collect();
+        $ipeService = Service::where('name', 'IPE')->first();
+        $ipeFields = $ipeService ? $ipeService->fields : collect();
 
         $services = collect();
         $user = Auth::user();
         $role = $user->role ?? 'user';
         
-        foreach ($validationFields as $field) {
+        foreach ($ipeFields as $field) {
             $price = $field->prices()->where('user_type', $role)->value('price') ?? $field->base_price;
             $services->push([
                 'id' => $field->id,
                 'name' => $field->field_name,
                 'price' => $price,
-                'type' => 'validation',
-                'service_id' => $field->service_id
+                'type' => 'ipe',
+                'service_id' => $field->service_id,
+                'field_code' => $field->field_code ?? '002'
             ]);
         }
         
         $wallet = Wallet::where('user_id', Auth::id())->first();
         
         $query = AgentService::where('user_id', Auth::id())
-            ->where('service_type', 'NIN_VALIDATION'); // Specific to Validation
+            ->where('service_type', 'IPE'); // Filter by IPE service type
 
         if ($request->has('search') && $request->search != '') {
             $searchTerm = $request->search;
-            $query->where('nin', 'like', "%{$searchTerm}%");
+            $query->where(function($q) use ($searchTerm) {
+                $q->where('tracking_id', 'like', "%{$searchTerm}%")
+                  ->orWhere('reference', 'like', "%{$searchTerm}%");
+            });
         }
 
         if ($request->has('status') && $request->status != '') {
@@ -63,14 +67,15 @@ class NinValidationController extends Controller
             END
         ")->orderBy('created_at', 'desc')->paginate(10)->withQueryString();
 
-        return view('nin.validation', compact('services', 'wallet', 'submissions'));
+        return view('nin.ipe', compact('services', 'wallet', 'submissions'));
     }
 
     public function store(Request $request)
     {
         $validated = $request->validate([
             'service_field' => 'required',
-            'nin' => 'required|digits:11',
+            'tracking_id' => 'required|string|min:10|max:50',
+            'description' => 'nullable|string|max:255',
         ]);
 
         $fieldId = $request->service_field;
@@ -89,12 +94,12 @@ class NinValidationController extends Controller
 
         $apiKey = env('AREWA_API_TOKEN');
         $apiBaseUrl = env('AREWA_BASE_URL');
-        $apiUrl = rtrim($apiBaseUrl, '/') . '/nin/validation';
+        $apiUrl = rtrim($apiBaseUrl, '/') . '/nin/ipe';
 
         $payload = [
-            'description' => $request->description ?? "My Reference",
-            'nin' => $request->nin,
-            'field_code' => '015', // Code for Validation
+            'field_code' => $serviceField->field_code ?? '002',
+            'tracking_id' => $request->tracking_id,
+            'description' => $request->description ?? 'My Reference',
         ];
 
         try {
@@ -104,11 +109,11 @@ class NinValidationController extends Controller
             
             $data = $response->json();
 
-            if (!$response->successful() || (isset($data['status']) && $data['status'] == 'error')) {
+            if (!$response->successful() || !($data['success'] ?? false)) {
                 return back()->with('error', 'API Submission Failed: ' . ($data['message'] ?? 'Unknown Error'));
             }
         } catch (\Exception $e) {
-            Log::error('API Error: ' . $e->getMessage());
+            Log::error('IPE API Error: ' . $e->getMessage());
             return back()->with('error', 'Connection Error: Unable to reach service provider.');
         }
 
@@ -126,28 +131,28 @@ class NinValidationController extends Controller
                 'transaction_ref' => $transactionRef,
                 'user_id' => $user->id,
                 'amount' => $servicePrice,
-                'description' => "NIN Validation for {$serviceField->field_name}",
+                'description' => "IPE Clearance for {$serviceField->field_name}",
                 'type' => 'debit',
                 'status' => 'completed',
                 'performed_by' => $performedBy,
                 'metadata' => [
                     'service' => $serviceField->service->name,
                     'service_field' => $serviceField->field_name,
-                    'nin' => $request->nin,
+                    'tracking_id' => $request->tracking_id,
                 ],
             ]);
 
-            $status = $this->normalizeStatus($data['status'] ?? 'processing');
+            $status = $this->normalizeStatus($data['data']['status'] ?? $data['status'] ?? 'processing');
 
             AgentService::create([
-                'reference' => 'REF-' . strtoupper(Str::random(10)),
+                'reference' => $data['data']['reference'] ?? 'REF-' . strtoupper(Str::random(10)),
                 'user_id' => $user->id,
                 'service_id' => $serviceField->service_id,
                 'service_field_id' => $serviceField->id,
                 'field_code' => $serviceField->field_code,
                 'transaction_id' => $transaction->id,
-                'service_type' => 'NIN_VALIDATION',
-                'nin' => $request->nin,
+                'service_type' => 'IPE',
+                'tracking_id' => $request->tracking_id,
                 'amount' => $servicePrice,
                 'status' => $status,
                 'submission_date' => now(),
@@ -158,118 +163,152 @@ class NinValidationController extends Controller
             ]);
 
             DB::commit();
-            return back()->with('success', 'NIN Validation Request submitted successfully. Status: ' . $status);
+            return back()->with('success', 'IPE request submitted successfully. Status: ' . $status);
 
         } catch (\Exception $e) {
             DB::rollBack();
-            Log::error('Transaction Error: ' . $e->getMessage());
+            Log::error('IPE Transaction Error: ' . $e->getMessage());
             return back()->with('error', 'System Error: Failed to record transaction. Please contact support.');
         }
     }
 
-    public function checkStatus(Request $request, $id = null)
+    public function check($id)
     {
         try {
-            if ($id) {
-                $agentService = AgentService::findOrFail($id);
-            } else {
-                $request->validate([
-                    'nin' => 'required|string',
-                ]);
-                $agentService = AgentService::where('nin', $request->nin)
-                    ->orderBy('created_at', 'desc')
-                    ->firstOrFail();
-            }
+            $agentService = AgentService::where('id', $id)
+                ->where('user_id', Auth::id())
+                ->where('service_type', 'IPE')
+                ->firstOrFail();
 
             $apiKey = env('AREWA_API_TOKEN');
             $apiBaseUrl = env('AREWA_BASE_URL');
-            $url = rtrim($apiBaseUrl, '/') . '/nin/validation';
+            $url = rtrim($apiBaseUrl, '/') . '/nin/ipe';
             
-            $payload = [
-                'description' => $agentService->description ?? "Status Check",
-                'nin' => $agentService->nin,
-                'field_code' => '015'
-            ];
-
             $response = Http::withToken($apiKey)
                 ->acceptJson()
-                ->get($url, $payload);
+                ->get($url, [
+                    'tracking_id' => $agentService->tracking_id,
+                ]);
             
             $apiResponse = $response->json();
+
+            if (!$response->successful()) {
+                return back()->with('error', 'Failed to check status: ' . ($apiResponse['message'] ?? 'API Error'));
+            }
+
             $cleanResponse = $this->cleanApiResponse($apiResponse);
 
             $updateData = [
-                'comment' => $cleanResponse,
+                'comment' => $apiResponse['comment'] ?? $cleanResponse,
             ];
 
             if (isset($apiResponse['status'])) {
                 $updateData['status'] = $this->normalizeStatus($apiResponse['status']);
-            } elseif (isset($apiResponse['response'])) {
-                $updateData['status'] = $this->normalizeStatus($apiResponse['response']);
             }
 
             $agentService->update($updateData);
 
-            if ($request->wantsJson() || $request->is('api/*')) {
-                return response()->json([
-                    'success' => true,
-                    'nin' => $agentService->nin,
-                    'status' => $agentService->status,
-                    'response' => $apiResponse,
-                ]);
-            }
-
             return back()->with('success', 'Status checked successfully. Current status: ' . $agentService->status);
 
         } catch (\Exception $e) {
-            Log::error('Status Check Error: ' . $e->getMessage());
-            if ($request->wantsJson() || $request->is('api/*')) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Failed to check status: ' . $e->getMessage(),
-                ], 500);
-            }
+            Log::error('IPE Status Check Error: ' . $e->getMessage());
             return back()->with('error', 'Unable to complete the status check. Please try again.');
         }
     }
 
-    public function webhook(Request $request)
+    public function details($id)
     {
-        $data = $request->all();
-        Log::info('NIN Validation Webhook Received', $data);
+        try {
+            $submission = AgentService::where('id', $id)
+                ->where('user_id', Auth::id())
+                ->where('service_type', 'IPE')
+                ->firstOrFail();
 
-        $identifier = $data['nin'] ?? null;
-
-        if ($identifier) {
-            $submission = AgentService::where('nin', $identifier)
-                ->orderBy('created_at', 'desc')
-                ->first();
-
-            if ($submission) {
-                $cleanResponse = $this->cleanApiResponse($data);
-                
-                $updateData = [
-                    'comment' => $cleanResponse,
-                ];
-
-                if (isset($data['status'])) {
-                    $updateData['status'] = $this->normalizeStatus($data['status']);
-                }
-
-                $submission->update($updateData);
-            }
+            return response()->json([
+                'id' => $submission->id,
+                'tracking_id' => $submission->tracking_id,
+                'reference' => $submission->reference,
+                'service_field_name' => $submission->service_field_name,
+                'status' => $submission->status,
+                'amount' => $submission->amount,
+                'description' => $submission->description,
+                'comment' => $submission->comment,
+                'details' => $submission->details ?? null,
+                'created_at' => $submission->created_at,
+                'last_checked_at' => $submission->updated_at,
+            ]);
+        } catch (\Exception $e) {
+            return response()->json(['error' => 'Submission not found'], 404);
         }
+    }
 
-        return response()->json([
-            'success' => true,
-            'message' => 'Webhook received successfully'
-        ]);
+    public function batchCheck()
+    {
+        try {
+            $pendingSubmissions = AgentService::where('service_type', 'IPE')
+                ->whereIn('status', ['pending', 'processing'])
+                ->where(function($query) {
+                    $query->where('updated_at', '<', now()->subMinutes(30))
+                          ->orWhereNull('updated_at');
+                })
+                ->limit(20)
+                ->get();
+
+            $apiKey = env('AREWA_API_TOKEN');
+            $apiBaseUrl = env('AREWA_BASE_URL');
+            $url = rtrim($apiBaseUrl, '/') . '/nin/ipe';
+
+            $checked = 0;
+
+            foreach ($pendingSubmissions as $submission) {
+                try {
+                    $response = Http::withToken($apiKey)
+                        ->acceptJson()
+                        ->get($url, [
+                            'tracking_id' => $submission->tracking_id,
+                        ]);
+
+                    $apiResponse = $response->json();
+
+                    if ($response->successful() && ($apiResponse['success'] ?? false)) {
+                        $cleanResponse = $this->cleanApiResponse($apiResponse);
+                        
+                        $updateData = [
+                            'comment' => $apiResponse['comment'] ?? $cleanResponse,
+                        ];
+
+                        if (isset($apiResponse['status'])) {
+                            $updateData['status'] = $this->normalizeStatus($apiResponse['status']);
+                        }
+
+                        $submission->update($updateData);
+                        $checked++;
+                    }
+                } catch (\Exception $e) {
+                    Log::error('Batch check error for submission ' . $submission->id . ': ' . $e->getMessage());
+                    continue;
+                }
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => "Batch check completed. Checked {$checked} submissions.",
+                'checked' => $checked
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Batch Check Error: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Batch check failed: ' . $e->getMessage()
+            ], 500);
+        }
     }
 
     private function cleanApiResponse($response): string
     {
         if (is_array($response)) {
-            $toKeep = array_diff_key($response, array_flip(['status', 'message', 'response']));
+            $toKeep = array_diff_key($response, array_flip(['status', 'message', 'response', 'success']));
             return json_encode($toKeep);
         }
         return (string) $response;

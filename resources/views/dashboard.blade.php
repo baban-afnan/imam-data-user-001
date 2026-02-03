@@ -143,7 +143,7 @@
                             ['modal' => '#verifyModal', 'icon' => 'ti-id-badge', 'color' => 'bg-primary', 'name' => 'Verify NIN'],
                             ['modal' => '#verifyBVNModal', 'icon' => 'ti-id-badge', 'color' => 'bg-info', 'name' => 'Verify (BVN / TIN)'],
                             ['route' => route('nin-validation'), 'icon' => 'ti-user-plus', 'color' => 'bg-warning', 'name' => 'Validation'],
-                            ['route' => route('nin-validation'), 'icon' => 'ti-user-plus', 'color' => 'bg-danger', 'name' => 'IPE'],
+                            ['route' => route('ipe.index'), 'icon' => 'ti-user-plus', 'color' => 'bg-danger', 'name' => 'IPE'],
                             ['route' => route('modification'), 'icon' => 'ti-user-plus', 'color' => 'bg-primary', 'name' => 'BVN Modification'],
                             ['route' => route('nin-modification'), 'icon' => 'ti-user-plus', 'color' => 'bg-success', 'name' => 'NIN Modification'],
                             ['route' => route('bvn-crm'), 'icon' => 'ti-user-plus', 'color' => 'bg-info', 'name' => 'BVN CRM'],
@@ -203,7 +203,7 @@
                                             <span class="fw-medium text-dark">#{{ substr($transaction->transaction_ref, 0, 8) }}...</span>
                                         </td>
                                         <td>
-                                            @if($transaction->type == 'credit')
+                                            @if(in_array($transaction->type, ['credit', 'manual_credit', 'bonus']))
                                                 <span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-2 py-1">
                                                     <i class="ti ti-arrow-down-left me-1"></i>Credit
                                                 </span>
@@ -214,8 +214,8 @@
                                             @endif
                                         </td>
                                         <td>
-                                            <span class="fw-bold {{ $transaction->type == 'credit' ? 'text-success' : 'text-danger' }}">
-                                                {{ $transaction->type == 'credit' ? '+' : '-' }}₦{{ number_format($transaction->amount, 2) }}
+                                            <span class="fw-bold {{ in_array($transaction->type, ['credit', 'manual_credit', 'bonus']) ? 'text-success' : 'text-danger' }}">
+                                                {{ in_array($transaction->type, ['credit', 'manual_credit', 'bonus']) ? '+' : '-' }}₦{{ number_format($transaction->amount, 2) }}
                                             </span>
                                         </td>
                                         <td>
@@ -321,9 +321,9 @@
                 <div class="modal-body p-4">
                     @php
                         $verifyServices = [
-                            ['route' => route('nin.verification.index'), 'icon' => 'ti-fingerprint', 'color' => 'bg-primary', 'name' => 'Verify Phone NO'],
+                            ['route' => route('nin.phone.index'), 'icon' => 'ti-fingerprint', 'color' => 'bg-primary', 'name' => 'Verify Phone NO'],
                             ['route' => route('nin.verification.index'), 'icon' => 'ti-credit-card', 'color' => 'bg-info', 'name' => 'Verify NIN'],
-                             ['route' => route('nin.verification.index'), 'icon' => 'ti-credit-card', 'color' => 'bg-secondary', 'name' => 'Verify DEMO'],
+                            ['route' => route('nin.demo.index'), 'icon' => 'ti-credit-card', 'color' => 'bg-secondary', 'name' => 'Verify DEMO'],
                         ];
                     @endphp
 

@@ -1,5 +1,5 @@
 <x-app-layout>
-    <title>Smart Link - {{ $title ?? 'NIN Modification' }}</title>
+    <title>Imam Data Sub - {{ $title ?? 'NIN Modification' }}</title>
 
     <div class="page-body">
         <div class="container-fluid">
