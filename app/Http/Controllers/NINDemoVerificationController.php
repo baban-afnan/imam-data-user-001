@@ -142,12 +142,13 @@ class NINDemoVerificationController extends Controller
 
             $response = Http::withToken($apiKey)
                 ->acceptJson()
+                ->timeout(30)
                 ->post($url, $payload);
 
             $data = $response->json();
 
+            // Check for successful response
             if ($response->successful() && isset($data['status']) && $data['status'] === true) {
-                // Check if api_response is present and status is true
                 if (isset($data['api_response']['status']) && $data['api_response']['status'] === true) {
                      return $this->processSuccessTransaction(
                         $wallet,
@@ -160,15 +161,79 @@ class NINDemoVerificationController extends Controller
                 }
             }
 
-            return back()->with([
-                'status' => 'error',
-                'message' => $data['message'] ?? 'Verification failed. Please check your details and try again.'
+            // Handle different error scenarios
+            $errorMessage = $data['message'] ?? 'Verification failed. Please check your details and try again.';
+            
+            // Check if it's an upstream provider error
+            if (isset($data['message']) && (
+                str_contains(strtolower($data['message']), 'upstream') ||
+                str_contains(strtolower($data['message']), 'nimc') ||
+                str_contains(strtolower($data['message']), 'unavailable') ||
+                str_contains(strtolower($data['message']), 'service is currently')
+            )) {
+                \Log::warning('NIMC Service Unavailable', [
+                    'firstName' => $request->firstName,
+                    'lastName' => $request->lastName,
+                    'user_id' => $user->id,
+                    'response' => $data
+                ]);
+                
+                return back()->with([
+                    'status' => 'warning',
+                    'message' => $errorMessage . ' This is a temporary issue with the verification service provider.'
+                ]);
+            }
+
+            // Log API errors for debugging
+            \Log::error('NIN Demo Verification API Error', [
+                'firstName' => $request->firstName,
+                'lastName' => $request->lastName,
+                'user_id' => $user->id,
+                'status_code' => $response->status(),
+                'response' => $data
             ]);
 
-        } catch (\Exception $e) {
             return back()->with([
                 'status' => 'error',
-                'message' => 'System Error: ' . $e->getMessage()
+                'message' => $errorMessage
+            ]);
+
+        } catch (\Illuminate\Http\Client\ConnectionException $e) {
+            \Log::error('NIN Demo Verification Connection Error', [
+                'firstName' => $request->firstName ?? 'N/A',
+                'lastName' => $request->lastName ?? 'N/A',
+                'user_id' => $user->id,
+                'error' => $e->getMessage()
+            ]);
+            
+            return back()->with([
+                'status' => 'error',
+                'message' => 'Unable to connect to verification service. Please check your internet connection and try again.'
+            ]);
+        } catch (\Illuminate\Http\Client\RequestException $e) {
+            \Log::error('NIN Demo Verification Request Error', [
+                'firstName' => $request->firstName ?? 'N/A',
+                'lastName' => $request->lastName ?? 'N/A',
+                'user_id' => $user->id,
+                'error' => $e->getMessage()
+            ]);
+            
+            return back()->with([
+                'status' => 'error',
+                'message' => 'Verification request failed. Please try again later.'
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('NIN Demo Verification System Error', [
+                'firstName' => $request->firstName ?? 'N/A',
+                'lastName' => $request->lastName ?? 'N/A',
+                'user_id' => $user->id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return back()->with([
+                'status' => 'error',
+                'message' => 'A system error occurred. Please contact support if this persists.'
             ]);
         }
     }
@@ -181,10 +246,51 @@ class NINDemoVerificationController extends Controller
         DB::beginTransaction();
 
         try {
-            $ninData = $apiResponse['api_response']['data']['data'] ?? [];
+            // Extract data from API response - handle both array and single object
+            $dataArray = $apiResponse['api_response']['data']['data'] ?? [];
             
-            $transactionRef = 'Demo-' . (time() % 1000000000) . '-' . mt_rand(100, 999);
+            // Get the first record if it's an array, otherwise use empty array
+            $ninData = [];
+            if (is_array($dataArray) && !empty($dataArray)) {
+                $ninData = isset($dataArray[0]) ? $dataArray[0] : $dataArray;
+            }
+            
+            // Log if no data received but continue with transaction
+            if (empty($ninData)) {
+                \Log::warning('NIN Demo Verification - No data in response', [
+                    'user_id' => $user->id,
+                    'response' => $apiResponse
+                ]);
+            }
+            
+            // Check for masked/suspended NIN data (indicated by ****)
+            $isSuspended = false;
+            $suspendedFields = [];
+            
+            // Check critical fields for masking
+            $criticalFields = ['firstname', 'surname', 'nin', 'telephoneno'];
+            foreach ($criticalFields as $field) {
+                if (isset($ninData[$field]) && str_contains($ninData[$field], '****')) {
+                    $isSuspended = true;
+                    $suspendedFields[] = $field;
+                }
+            }
+            
+            // Log if suspended NIN is detected
+            if ($isSuspended) {
+                \Log::warning('NIN Demo Verification - Suspended NIN Detected', [
+                    'user_id' => $user->id,
+                    'suspended_fields' => $suspendedFields,
+                    'nin_data' => $ninData
+                ]);
+            }
+            
+            $transactionRef = 'D1-' . (time() % 1000000000) . '-' . mt_rand(100, 999);
             $performedBy = $user->first_name . ' ' . $user->last_name;
+
+            // Determine status based on whether NIN is suspended
+            $transactionStatus = $isSuspended ? 'suspended' : '';
+            $verificationStatus = $isSuspended ? 'suspended' : 'pending';
 
             $transaction = Transaction::create([
                 'transaction_ref' => $transactionRef,
@@ -192,7 +298,7 @@ class NINDemoVerificationController extends Controller
                 'amount' => $servicePrice,
                 'description' => "NIN Demographic Verification - {$serviceField->field_name}",
                 'type' => 'debit',
-                'status' => 'completed',
+                'status' => "completed",
                 'performed_by'    => $performedBy,
                 'metadata' => [
                     'service' => 'verification',
@@ -200,6 +306,8 @@ class NINDemoVerificationController extends Controller
                     'field_code' => $serviceField->field_code,
                     'nin' => $ninData['nin'] ?? 'N/A',
                     'user_role' => $user->role,
+                    'is_suspended' => $isSuspended,
+                    'suspended_fields' => $suspendedFields,
                     'price_details' => [
                         'base_price' => $serviceField->base_price,
                         'user_price' => $servicePrice,
@@ -235,14 +343,13 @@ class NINDemoVerificationController extends Controller
                 'trackingId' => $ninData['trackingId'] ?? null,
                 'performed_by'    => $performedBy,
                 'submission_date' => Carbon::now(),
-                'status' => 'pending', // requirement: store in verification table and the status use pending
+                'status' => 'pending',
                 'response_data' => $apiResponse
             ]);
 
             DB::commit();
 
             // Flash normalized verification data for Blade
-            // Adjusting structure to match your blade expectations (which seems to use ['data'])
             session()->flash('verification', [
                 'data' => [
                     'nin' => $ninData['nin'] ?? 'N/A',
@@ -256,9 +363,16 @@ class NINDemoVerificationController extends Controller
                 ]
             ]);
 
+            // Prepare success message with warning if suspended
+            $message = "NIN Demographic Verification successful. Reference: {$transactionRef}. Charged: NGN " . number_format($servicePrice, 2);
+            
+            if ($isSuspended) {
+                $message .= " | WARNING: This NIN appears to be suspended or restricted. The verification service returned masked data (****). Please contact NIMC for assistance.";
+            }
+
             return redirect()->route('nin.demo.index')->with([
-                'status' => 'success',
-                'message' => "NIN Demographic Verification successful. Reference: {$transactionRef}. Charged: NGN " . number_format($servicePrice, 2),
+                'status' => $isSuspended ? 'warning' : 'success',
+                'message' => $message,
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
@@ -275,17 +389,17 @@ class NINDemoVerificationController extends Controller
      */
     private function chargeForSlip($user, $fieldCode)
     {
-         // 1. Get Verification Service using ServiceManager
          $service = ServiceManager::getServiceWithFields('Verification', [
             ['name' => 'Free Slip', 'code' => 'V101', 'price' => 0],
             ['name' => 'Regular Slip', 'code' => 'V102', 'price' => 100],
+            ['name' => 'standard slip', 'code' => '611', 'price' => 100],
+            ['name' => 'preminum slip', 'code' => '612', 'price' => 150],
         ]);
 
         if (!$service) {
             throw new \Exception('Verification service not available.');
         }
 
-        // 2. Get ServiceField
         $serviceField = $service->fields()
             ->where('field_code', $fieldCode)
             ->where('is_active', true)
@@ -295,10 +409,7 @@ class NINDemoVerificationController extends Controller
              throw new \Exception('Slip service not available.');
         }
 
-        // 3. Determine service price based on user role
         $servicePrice = $serviceField->getPriceForUserType($user->role);
-
-        // 4. Check wallet
         $wallet = Wallet::where('user_id', $user->id)->firstOrFail();
 
         if ($wallet->status !== 'active') {
@@ -311,7 +422,7 @@ class NINDemoVerificationController extends Controller
         
         DB::beginTransaction();
         try {
-             $transactionRef = 'Slip-' . (time() % 1000000000) . '-' . mt_rand(100, 999);
+             $transactionRef = 'D-' . (time() % 1000000000) . '-' . mt_rand(100, 999);
              $performedBy = $user->first_name . ' ' . $user->last_name;
  
              Transaction::create([
@@ -334,7 +445,6 @@ class NINDemoVerificationController extends Controller
                  ],
              ]);
  
-             // Deduct wallet balance
              $wallet->decrement('balance', $servicePrice);
              
              DB::commit();
@@ -346,14 +456,13 @@ class NINDemoVerificationController extends Controller
         }
     }
 
+
     public function freeSlip($nin_no)
     {
         try {
             $this->chargeForSlip(Auth::user(), 'V101');
-            
             $repObj = new NIN_PDF_Repository();
-            // Using regularPDF for free slip as requested "use thesame slip"
-            return $repObj->regularPDF($nin_no);
+            return $repObj->freePDF($nin_no);
         } catch (\Exception $e) {
             return back()->with('error', $e->getMessage());
         }
@@ -363,9 +472,30 @@ class NINDemoVerificationController extends Controller
     {
         try {
             $this->chargeForSlip(Auth::user(), 'V102');
-            
             $repObj = new NIN_PDF_Repository();
             return $repObj->regularPDF($nin_no);
+        } catch (\Exception $e) {
+            return back()->with('error', $e->getMessage());
+        }
+    }
+
+    public function standardSlip($nin_no)
+    {
+        try {
+            $this->chargeForSlip(Auth::user(), '611');
+            $repObj = new NIN_PDF_Repository();
+            return $repObj->standardPDF($nin_no);
+        } catch (\Exception $e) {
+            return back()->with('error', $e->getMessage());
+        }
+    }
+
+    public function premiumSlip($nin_no)
+    {
+        try {
+            $this->chargeForSlip(Auth::user(), '612');
+            $repObj = new NIN_PDF_Repository();
+            return $repObj->premiumPDF($nin_no);
         } catch (\Exception $e) {
             return back()->with('error', $e->getMessage());
         }

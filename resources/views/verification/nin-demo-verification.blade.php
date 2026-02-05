@@ -1,5 +1,5 @@
 <x-app-layout>
-    <title>Imam Data Sub - {{ $title ?? 'Demographic Verification' }}</title>
+    <title>Digital data Verify - {{ $title ?? 'Demographic Verification' }}</title>
     <div class="page-body">
         <div class="container-fluid">
             <div class="page-title mb-3">

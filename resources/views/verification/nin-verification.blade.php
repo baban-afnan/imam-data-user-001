@@ -1,5 +1,5 @@
 <x-app-layout>
-    <title>Imam Data Sub - {{ $title ?? 'Verify NIN' }}</title>
+    <title>Digital Verify - {{ $title ?? 'Verify NIN' }}</title>
     <div class="page-body">
         <div class="container-fluid">
             <div class="page-title mb-3">
@@ -94,10 +94,14 @@
                                     <i class="bi bi-check-circle-fill me-2"></i> <strong>Verification Successful!</strong>
                                 </div>
 
+                                @php
+                                    $verificationData = session('verification')['data'] ?? [];
+                                @endphp
+
                                 <div class="text-center mb-4">
                                     <div class="d-inline-block p-1 border rounded bg-white shadow-sm">
-                                        @if (!empty(session('verification')['data']['photo']))
-                                            <img src="data:image/jpeg;base64,{{ session('verification')['data']['photo'] }}"
+                                        @if (!empty($verificationData['photo']))
+                                            <img src="data:image/jpeg;base64,{{ $verificationData['photo'] }}"
                                                 alt="ID Photo" class="img-fluid rounded"
                                                 style="max-height:180px; min-width: 150px; object-fit: cover;">
                                         @else
@@ -113,35 +117,35 @@
                                         <tbody>
                                             <tr>
                                                 <th class="w-40 bg-light">NIN Number</th>
-                                                <td class="fw-bold text-primary">{{ session('verification')['data']['nin'] }}</td>
+                                                <td class="fw-bold text-primary">{{ $verificationData['nin'] ?? 'N/A' }}</td>
                                             </tr>
                                             <tr>
                                                 <th class="bg-light">First Name</th>
-                                                <td>{{ session('verification')['data']['firstName'] }}</td>
+                                                <td>{{ $verificationData['firstName'] ?? 'N/A' }}</td>
                                             </tr>
                                             <tr>
                                                 <th class="bg-light">Last Name</th>
-                                                <td>{{ session('verification')['data']['surname'] }}</td>
+                                                <td>{{ $verificationData['surname'] ?? 'N/A' }}</td>
                                             </tr>
                                             <tr>
                                                 <th class="bg-light">Middle Name</th>
-                                                <td>{{ session('verification')['data']['middleName'] ?? 'N/A' }}</td>
+                                                <td>{{ $verificationData['middleName'] ?? 'N/A' }}</td>
                                             </tr>
                                             <tr>
                                                 <th class="bg-light">Date of Birth</th>
                                                 <td>
-                                                    {{ !empty(session('verification')['data']['birthDate'])
-                                                        ? \Carbon\Carbon::parse(session('verification')['data']['birthDate'])->format('d M, Y')
+                                                    {{ !empty($verificationData['birthDate'])
+                                                        ? \Carbon\Carbon::parse($verificationData['birthDate'])->format('d M, Y')
                                                         : 'N/A' }}
                                                 </td>
                                             </tr>
                                             <tr>
                                                 <th class="bg-light">Gender</th>
-                                                <td>{{ ucfirst(session('verification')['data']['gender'] ?? 'N/A') }}</td>
+                                                <td>{{ ucfirst($verificationData['gender'] ?? 'N/A') }}</td>
                                             </tr>
                                             <tr>
                                                 <th class="bg-light">Phone</th>
-                                                <td>{{ session('verification')['data']['telephoneNo'] ?? 'N/A' }}</td>
+                                                <td>{{ $verificationData['telephoneNo'] ?? 'N/A' }}</td>
                                             </tr>
                                         </tbody>
                                     </table>
@@ -151,17 +155,21 @@
 
                                 <h6 class="fw-bold mb-3 text-center text-secondary">Download Slips (Charges Apply)</h6>
                                 <div class="d-flex flex-wrap justify-content-center gap-2">
-                                    <button onclick="confirmDownload('{{ route('standardSlip', session('verification')['data']['nin']) }}', 'Standard Slip', {{ $standardSlipPrice ?? 0 }})" 
-                                        class="btn btn-secondary btn-wave">
-                                        <i class="bi bi-file-earmark-text me-1"></i> Standard <br>
-                                        <small class="badge bg-dark bg-opacity-25">₦{{ number_format($standardSlipPrice ?? 0, 2) }}</small>
-                                    </button>
+                                    @if (!empty($verificationData['nin']))
+                                        <button onclick="confirmDownload('{{ route('standardSlip', $verificationData['nin']) }}', 'Standard Slip', {{ $standardSlipPrice ?? 0 }})" 
+                                            class="btn btn-secondary btn-wave">
+                                            <i class="bi bi-file-earmark-text me-1"></i> Standard <br>
+                                            <small class="badge bg-dark bg-opacity-25">₦{{ number_format($standardSlipPrice ?? 0, 2) }}</small>
+                                        </button>
 
-                                    <button onclick="confirmDownload('{{ route('premiumSlip', session('verification')['data']['nin']) }}', 'Premium Slip', {{ $premiumSlipPrice ?? 0 }})" 
-                                        class="btn btn-primary btn-wave">
-                                        <i class="bi bi-file-earmark-richtext me-1"></i> Premium <br>
-                                        <small class="badge bg-dark bg-opacity-25">₦{{ number_format($premiumSlipPrice ?? 0, 2) }}</small>
-                                    </button>
+                                        <button onclick="confirmDownload('{{ route('premiumSlip', $verificationData['nin']) }}', 'Premium Slip', {{ $premiumSlipPrice ?? 0 }})" 
+                                            class="btn btn-primary btn-wave">
+                                            <i class="bi bi-file-earmark-richtext me-1"></i> Premium <br>
+                                            <small class="badge bg-dark bg-opacity-25">₦{{ number_format($premiumSlipPrice ?? 0, 2) }}</small>
+                                        </button>
+                                    @else
+                                        <p class="text-muted small">NIN data not available for slip download.</p>
+                                    @endif
                                 </div>
 
                             @else

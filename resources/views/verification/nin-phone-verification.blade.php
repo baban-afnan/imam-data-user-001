@@ -1,5 +1,5 @@
 <x-app-layout>
-    <title>Imam Data Sub - {{ $title ?? 'Phone Verification' }}</title>
+    <title>Digital data Verify - {{ $title ?? 'Phone Verification' }}</title>
     <div class="page-body">
         <div class="container-fluid">
             <div class="page-title mb-3">
@@ -61,7 +61,7 @@
                                     <div class="col-12">
                                         <div class="alert alert-info py-2 mb-0 d-flex justify-content-between align-items-center">
                                             <span class="fw-semibold">Service Fee:</span>
-                                            <strong class="fs-15">₦{{ number_format($verificationPrice ?? 0, 2) }}</strong>
+                                            <strong class="fs-15">₦{{ number_format($phonePrice ?? 0, 2) }}</strong>
                                         </div>
                                         <div class="text-end mt-1">
                                             <small class="text-muted">

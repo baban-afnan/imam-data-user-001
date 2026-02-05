@@ -148,6 +148,27 @@ class NINverificationController extends Controller
             $status = $decodedData['status'] ?? 'UNKNOWN';
 
             if ($status === 'success') {
+                // Check if NIN is suspended (contains **** in critical fields)
+                $apiData = $decodedData['data'] ?? [];
+                
+                $isSuspended = false;
+                $suspendedFields = ['firstname', 'surname', 'birthdate', 'birthstate', 'gender'];
+                
+                foreach ($suspendedFields as $field) {
+                    $value = $apiData[$field] ?? ($apiData[str_replace('_', '', strtolower($field))] ?? '');
+                    if (strpos($value, '****') !== false || strpos($value, '*****') !== false || $value === '*') {
+                        $isSuspended = true;
+                        break;
+                    }
+                }
+                
+                if ($isSuspended) {
+                    return back()->with([
+                        'status' => 'error',
+                        'message' => 'This NIN is suspended and cannot be verified. Please contact NIMC for assistance.'
+                    ]);
+                }
+                
                 // Successful -> Charge + Create Transaction + Create Verification
                 return $this->processSuccessTransaction(
                     $wallet,
