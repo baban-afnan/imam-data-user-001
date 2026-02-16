@@ -19,6 +19,9 @@ use App\Http\Controllers\Agency\TinRegistrationController;
 use App\Http\Controllers\Agency\NinValidationController;
 use App\Http\Controllers\Agency\NinModificationController;
 use App\Http\Controllers\Agency\IpeController;
+use App\Http\Controllers\Action\SmeDataController;
+
+
 
 Route::get('/', function () {
     return view('welcome');
@@ -69,11 +72,16 @@ Route::middleware('auth')->group(function () {
         Route::get('/fetch-data-bundles-price', [DataController::class, 'fetchBundlePrice'])->name('fetch.bundle.price');
         Route::post('/verify-pin', [DataController::class, 'verifyPin'])->name('verify.pin');
 
-        Route::get('/sme-data', [DataController::class, 'sme_data'])->name('sme-data');
-        Route::get('/fetch-data-type', [DataController::class, 'fetchDataType']);
-        Route::get('/fetch-data-plan', [DataController::class, 'fetchDataPlan']);
-        Route::get('/fetch-sme-data-bundles-price', [DataController::class, 'fetchSmeBundlePrice']);
-        Route::post('/buy-sme-data', [DataController::class, 'buySMEdata'])->name('buy-sme-data');
+        // SME Data (New Service)
+        Route::prefix('sme-data')->group(function () {
+        Route::get('/', [SmeDataController::class, 'index'])->name('buy-sme-data');
+        Route::post('/buy', [SmeDataController::class, 'buySMEdata'])->name('buy-sme-data.submit');
+         });
+
+        // SME Data AJAX Routes (as requested)
+       Route::get('/fetch-data-type', [SmeDataController::class, 'fetchDataType']);
+       Route::get('/fetch-data-plan', [SmeDataController::class, 'fetchDataPlan']);
+       Route::get('/fetch-sme-data-bundles-price', [SmeDataController::class, 'fetchSmeBundlePrice']);
 
         // Education
         Route::get('/education', [EducationalController::class, 'pin'])->name("education");

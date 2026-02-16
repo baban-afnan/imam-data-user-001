@@ -208,15 +208,15 @@
                         <ul class="footer-contact list-unstyled">
                             <li style="margin-bottom: 20px; display: flex;">
                                 <div style="width: 30px; color: #0d5c3e; margin-top: 2px;"><i class="fas fa-map-marker-alt"></i></div>
-                                <span style="color: rgba(255,255,255,0.8);">Tudun Wada Street, Gwammaja, Kano</span>
+                                <span style="color: rgba(255,255,255,0.8);">Sabon Gari Daura Bayan Magajiya Primary School Daura/Kofar Arewa Daura Near Danjuma Ishara Ventures Daura </span>
                             </li>
                             <li style="margin-bottom: 20px; display: flex;">
                                 <div style="width: 30px; color: #0d5c3e; margin-top: 2px;"><i class="fas fa-phone"></i></div>
-                                <span style="color: rgba(255,255,255,0.8);">09112345678</span>
+                                <span style="color: rgba(255,255,255,0.8);">07067673296</span>
                             </li>
                             <li style="margin-bottom: 20px; display: flex;">
                                 <div style="width: 30px; color: #0d5c3e; margin-top: 2px;"><i class="fas fa-envelope"></i></div>
-                                <span style="color: rgba(255,255,255,0.8);">info@Imam Data Sub.com.ng</span>
+                                <span style="color: rgba(255,255,255,0.8);">dauradaura2020@gmail.com</span>
                             </li>
                         </ul>
                     </div>

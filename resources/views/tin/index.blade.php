@@ -173,8 +173,6 @@
                                     <i class="bi bi-check-circle-fill me-2"></i> <strong>Verification Successful!</strong>
                                 </div>
 
-                              
-
                                 {{-- Verification Details --}}
                                 <div class="table-responsive">
                                     <table class="table table-bordered table-striped align-middle">
@@ -363,7 +361,7 @@
                 const inputs = container.querySelectorAll('input, select');
                 inputs.forEach(input => {
                     // Only toggle required if it's the main required fields
-                    if(input.id === 'nin' || input.id === 'dob' || input.id === 'rc_number' || input.id === 'org_type') {
+                    if(input.id === 'nin' || input.id === 'dob' || input.id === 'rc_number' || input.id === 'org_type' || input.id === 'first_name' || input.id === 'last_name') {
                         if(isRequired) input.setAttribute('required', 'required');
                         else input.removeAttribute('required');
                     }

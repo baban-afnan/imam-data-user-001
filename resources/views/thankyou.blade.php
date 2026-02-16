@@ -1,5 +1,5 @@
 <x-app-layout>
-    <title>Smart Link - Transaction Receipt</title>
+    <title>IMAM DATA SUB - Transaction Receipt</title>
 
     @push('styles')
     <style>
@@ -181,7 +181,7 @@
             <div class="receipt-body">
                 <!-- Brand Header -->
                 <div class="receipt-brand">
-                    <h4>SMART LINK</h4>
+                    <h4>Imam Data Sub</h4>
                     <p class="text-muted small mb-0">Official Transaction Receipt</p>
                 </div>
 
@@ -189,7 +189,7 @@
                 <div class="text-center mb-4">
                     <span class="status-badge">
                         <i class="bi bi-check-circle-fill"></i>
-                        Success
+                       Transaction Successful
                     </span>
                 </div>
 
@@ -228,10 +228,7 @@
                             <p>Request ID</p>
                             <h6>{{ session('request_id', 'N/A') }}</h6>
                         </div>
-                    </div>
 
-                    <div class="detail-box">
-                        <h6 class="section-label">Payment Breakdown</h6>
                         @if(session('amount'))
                         <div class="detail-item">
                             <p>Value</p>
@@ -267,7 +264,7 @@
 
                 <!-- Footer -->
                 <div class="footer-note">
-                    <p class="mb-1"><strong>Thank you for choosing Smart Link!</strong></p>
+                    <p class="mb-1"><strong>Thank you for choosing Imam Data Sub!</strong></p>
                     <p class="mb-0">Computer generated receipt. No signature needed.</p>
                 </div>
             </div>

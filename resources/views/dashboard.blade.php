@@ -139,6 +139,7 @@
                             ['route' => route('wallet'), 'icon' => 'ti-wallet', 'color' => 'bg-primary', 'name' => 'Wallet'],
                             ['route' => route('airtime'), 'icon' => 'ti-phone-call', 'color' => 'bg-info', 'name' => 'Airtime'],
                             ['route' => route('buy-data'), 'icon' => 'ti-world', 'color' => 'bg-warning', 'name' => 'Data'],
+                            ['route' => route('buy-sme-data'), 'icon' => 'ti-world', 'color' => 'bg-success', 'name' => 'SME Data'],
                             ['route' => route('electricity'), 'icon' => 'ti-bolt', 'color' => 'bg-danger', 'name' => 'Electricity'],
                             ['modal' => '#verifyModal', 'icon' => 'ti-id-badge', 'color' => 'bg-primary', 'name' => 'Verify NIN'],
                             ['modal' => '#verifyBVNModal', 'icon' => 'ti-id-badge', 'color' => 'bg-info', 'name' => 'Verify (BVN / TIN)'],
@@ -148,6 +149,7 @@
                             ['route' => route('nin-modification'), 'icon' => 'ti-user-plus', 'color' => 'bg-success', 'name' => 'NIN Modification'],
                             ['route' => route('bvn-crm'), 'icon' => 'ti-user-plus', 'color' => 'bg-info', 'name' => 'BVN CRM'],
                             ['route' => route('phone.search.index'), 'icon' => 'ti-user-plus', 'color' => 'bg-success', 'name' => 'BVN Search'],
+                            ['route' => route('support'), 'icon' => 'ti-message-plus', 'color' => 'bg-primary', 'name' => 'Support'],
                         ];
                     @endphp
 

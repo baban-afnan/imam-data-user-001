@@ -50,7 +50,7 @@
 
                             <div class="mt-4 p-3 bg-light rounded-3 border">
                                 <h6 class="fw-bold text-primary mb-2"><i class="bi bi-envelope me-2"></i>Email Support</h6>
-                                <p class="small text-muted mb-0">support@imamdata.com.ng</p>
+                                <p class="small text-muted mb-0">dauradaura2020@gmail.com</p>
                             </div>
                         </div>
                     </div>
